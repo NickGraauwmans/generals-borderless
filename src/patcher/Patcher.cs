@@ -165,7 +165,20 @@ static class Patcher
         if (!File.Exists(dll)) return "Not installed";
         byte[] current = File.ReadAllBytes(dll);
         if (!IsOurs(current)) return "Not installed (its own dinput8.dll is kept)";
-        return current.SequenceEqual(EmbeddedDll()) ? "Installed" : "Installed, older version";
+        Version installed = MarkerVersion(current), mine = MarkerVersion(EmbeddedDll());
+        if (installed == null || mine == null || installed == mine) return "Installed";
+        return installed < mine ? "Installed, older version" : "Installed, newer version";
+    }
+
+    // The version after the marker text, e.g. 1.2 in "GeneralsBorderless dinput8 proxy 1.2".
+    static Version MarkerVersion(byte[] dll)
+    {
+        int at = IndexOf(dll, Encoding.ASCII.GetBytes(Marker + " "));
+        if (at < 0) return null;
+        var text = new StringBuilder();
+        for (int i = at + Marker.Length + 1; i < dll.Length && (char.IsDigit((char)dll[i]) || dll[i] == '.'); i++) text.Append((char)dll[i]);
+        Version v;
+        return Version.TryParse(text.ToString(), out v) ? v : null;
     }
 
     // Writes the DLL next to a temporary name first, so a running game (file in use) leaves everything as it was.
@@ -228,16 +241,17 @@ static class Patcher
         return e.Message;
     }
 
-    static bool IsOurs(byte[] file)
+    static bool IsOurs(byte[] file) { return IndexOf(file, Encoding.ASCII.GetBytes(Marker)) >= 0; }
+
+    static int IndexOf(byte[] data, byte[] find)
     {
-        byte[] m = Encoding.ASCII.GetBytes(Marker);
-        for (int i = 0; i + m.Length <= file.Length; i++)
+        for (int i = 0; i + find.Length <= data.Length; i++)
         {
             int k = 0;
-            while (k < m.Length && file[i + k] == m[k]) k++;
-            if (k == m.Length) return true;
+            while (k < find.Length && data[i + k] == find[k]) k++;
+            if (k == find.Length) return i;
         }
-        return false;
+        return -1;
     }
 
     static byte[] embedded;
