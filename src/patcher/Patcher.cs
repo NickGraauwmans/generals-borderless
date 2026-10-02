@@ -20,15 +20,15 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 // The release version, shown in the window; a release tag must match it (the workflow checks).
-[assembly: AssemblyVersion("1.3.1")]
-[assembly: AssemblyFileVersion("1.3.1")]
+[assembly: AssemblyVersion("1.3.2")]
+[assembly: AssemblyFileVersion("1.3.2")]
 [assembly: AssemblyTitle("Generals Borderless")]
 [assembly: AssemblyProduct("Generals Borderless")]
 
 static class Patcher
 {
     public const string AppTitle = "Generals Borderless";
-    public const string ProjectUrl = "https://github.com/NickGraauwmans/generals-borderless";
+    public const string ProjectUrl = "https://github.com/graauwmans/generals-borderless";
 
     public static string ReleaseVersion
     {
@@ -460,7 +460,7 @@ class PatcherForm : Form
         layout.Controls.Add(listTools, 0, 2);
         layout.Controls.Add(result, 0, 3);
         // bottom row: version and a link to the project on the left, buttons on the right
-        string versionText = "v" + Patcher.ReleaseVersion + "  \u00b7  ", linkText = "github.com/NickGraauwmans/generals-borderless";
+        string versionText = "v" + Patcher.ReleaseVersion + "  \u00b7  ", linkText = "github.com/graauwmans/generals-borderless";
         var link = new LinkLabel { Text = versionText + linkText, LinkArea = new LinkArea(versionText.Length, linkText.Length), AutoSize = true, UseMnemonic = false, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 12, 0) };
         link.LinkClicked += (s, e) => OpenInBrowser(Patcher.ProjectUrl);
         var bottom = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill, AutoSize = true };
