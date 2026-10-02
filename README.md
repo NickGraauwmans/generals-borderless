@@ -12,6 +12,8 @@ It runs the game in a window without a border that fills your whole screen. It l
 
 You install it once. After that the game always starts this way, no matter how you start it: the ShockWave launcher, a shortcut, GenPatcher or another mod.
 
+**Bonus:** alt-tab no longer crashes the game, which often happens in fullscreen.
+
 It is also nice if you simply like borderless fullscreen: alt-tab is quick, a second monitor works normally, and the mouse stays inside the game, so scrolling at the edge of the screen still works.
 
 ## Install
