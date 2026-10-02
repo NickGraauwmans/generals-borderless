@@ -13,15 +13,17 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
 // The release version, shown in the window; a release tag must match it (the workflow checks).
-[assembly: AssemblyVersion("1.3.2")]
-[assembly: AssemblyFileVersion("1.3.2")]
+[assembly: AssemblyVersion("1.3.3")]
+[assembly: AssemblyFileVersion("1.3.3")]
 [assembly: AssemblyTitle("Generals Borderless")]
 [assembly: AssemblyProduct("Generals Borderless")]
 
@@ -33,6 +35,28 @@ static class Patcher
     public static string ReleaseVersion
     {
         get { Version v = Assembly.GetExecutingAssembly().GetName().Version; return v.Major + "." + v.Minor + "." + v.Build; }
+    }
+
+    // The newest release on GitHub, or null without internet or an answer within a few seconds.
+    public static Version LatestRelease()
+    {
+        try
+        {
+            // Without a target framework in the exe, .NET would only offer TLS 1.0, which GitHub refuses.
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            var request = (HttpWebRequest)WebRequest.Create(ProjectUrl.Replace("https://github.com/", "https://api.github.com/repos/") + "/releases/latest");
+            request.UserAgent = AppTitle + " " + ReleaseVersion; // GitHub requires one
+            request.Accept = "application/vnd.github+json";
+            request.Timeout = request.ReadWriteTimeout = 5000;
+            using (WebResponse response = request.GetResponse())
+            using (var reader = new StreamReader(response.GetResponseStream()))
+            {
+                Match m = Regex.Match(reader.ReadToEnd(), "\"tag_name\"\\s*:\\s*\"v?(\\d+\\.\\d+\\.\\d+)\"");
+                Version v;
+                return m.Success && Version.TryParse(m.Groups[1].Value, out v) ? v : null;
+            }
+        }
+        catch (Exception) { return null; }
     }
 
     // The logo built into this exe (build.cmd: /win32icon), for the windows' title bars.
@@ -448,10 +472,11 @@ class PatcherForm : Form
         listTools.Controls.Add(add, 0, 0);
         listTools.Controls.Add(settings, 1, 0);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(12) };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6, Padding = new Padding(12) };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // else the column grows with the folder paths
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -463,12 +488,34 @@ class PatcherForm : Form
         string versionText = "v" + Patcher.ReleaseVersion + "  \u00b7  ", linkText = "github.com/graauwmans/generals-borderless";
         var link = new LinkLabel { Text = versionText + linkText, LinkArea = new LinkArea(versionText.Length, linkText.Length), AutoSize = true, UseMnemonic = false, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 12, 0) };
         link.LinkClicked += (s, e) => OpenInBrowser(Patcher.ProjectUrl);
+        // Ask GitHub for a newer release in the background; when there is one, a line above the
+        // version offers it. Offline (a LAN party) or when GitHub doesn't answer, nothing changes.
+        var update = new LinkLabel { AutoSize = true, UseMnemonic = false, Visible = false, Margin = new Padding(0, 0, 0, 6) };
+        update.LinkColor = update.ActiveLinkColor = Color.FromArgb(179, 89, 0);
+        update.LinkClicked += (s, e) => OpenInBrowser(Patcher.ProjectUrl + "/releases/latest");
+        Load += (s, e) => ThreadPool.QueueUserWorkItem(state =>
+        {
+            Version latest = Patcher.LatestRelease();
+            if (latest == null || latest <= Version.Parse(Patcher.ReleaseVersion)) return;
+            Patcher.Log("version " + latest + " is available");
+            try
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    update.Text = "Download the new version " + latest;
+                    update.Font = new Font(Font, FontStyle.Bold);
+                    update.Visible = true;
+                }));
+            }
+            catch (InvalidOperationException) { } // the window was closed already
+        });
         var bottom = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill, AutoSize = true };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // the link, at the left
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));     // the buttons, at the right
         bottom.Controls.Add(link, 0, 0);
         bottom.Controls.Add(buttons, 1, 0);
-        layout.Controls.Add(bottom, 0, 4);
+        layout.Controls.Add(update, 0, 4);
+        layout.Controls.Add(bottom, 0, 5);
         Controls.Add(layout);
         AcceptButton = install;
         CancelButton = close;

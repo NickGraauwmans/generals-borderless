@@ -1,4 +1,4 @@
-# Built by srcuild.cmd and by GitHub Actions; published as release assets, not committed.
+# Built by src\build.cmd and by GitHub Actions; published as release assets, not committed.
 *.exe
 *.dll
 *.zip
