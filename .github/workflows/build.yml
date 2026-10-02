@@ -58,6 +58,7 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item GeneralsBorderless.exe $dir
           Copy-Item README.md "$dir\README.txt"
+          Copy-Item LICENSE "$dir\LICENSE.txt"
           Compress-Archive $dir GeneralsBorderless.zip -Force
           Get-FileHash GeneralsBorderless.exe, GeneralsBorderless.zip -Algorithm SHA256 | Format-Table Hash, Path -AutoSize
 
