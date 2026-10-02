@@ -10,6 +10,8 @@ Since about September 2026, these games stutter and hitch in fullscreen on Windo
 
 It runs the game in a window without a border that fills your whole screen. It looks just like fullscreen, but it runs as smoothly as windowed mode.
 
+![Zero Hour, borderless over the whole screen](images/in-game.webp)
+
 You install it once. After that the game always starts this way, no matter how you start it: the ShockWave launcher, a shortcut, GenPatcher or another mod.
 
 **Bonus:** alt-tab no longer crashes the game, which often happens in fullscreen.
@@ -22,13 +24,20 @@ It is also nice if you simply like borderless fullscreen: alt-tab is quick, a se
 2. Run `GeneralsBorderless.exe`. Click **Yes** when Windows asks for admin rights (the game is in Program Files).
 3. It shows the game folders it found. Leave them ticked and click **Install**.
    Is a mod in its own separate folder? Click **Add folder...** and pick that folder.
-4. Close it and play like you always do.
+
+   ![Click Install](images/install.png)
+
+4. The folders now say **Installed**. Close it and play like you always do.
+
+   ![The folders say Installed](images/installed.png)
 
 Windows may say the app is unknown, because it isn't signed. Click **More info**, then **Run anyway**. If your antivirus removes `dinput8.dll`, allow it.
 
 ## Remove
 
 Run `GeneralsBorderless.exe` again, tick the folders and click **Remove**. Your game is back to how it was.
+
+![Click Remove](images/remove.png)
 
 ## Update
 
