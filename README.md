@@ -22,6 +22,10 @@ Windows SmartScreen may warn because the exe isn't signed: **More info > Run any
 
 Run `GeneralsBorderless.exe` again, tick the folders and click **Remove**. Everything is put back.
 
+## Update
+
+Download the new release, run its `GeneralsBorderless.exe` and click **Install**. Folders with the old version show "Installed, older version".
+
 ## Settings
 
 `GeneralsBorderless.ini` in the game folder:
@@ -51,20 +55,3 @@ If the patch stops working after GenPatcher or a game update replaced files, run
 Logs: `%LOCALAPPDATA%\GeneralsBorderless\game.log` (the game) and `patcher.log` (install/remove).
 
 The patcher can also be scripted: `GeneralsBorderless.exe -install | -remove | -status [-path <game folder>]...`
-
-## Building
-
-- `src/proxy`: the `dinput8.dll`, in C. Needs [Zig](https://ziglang.org) 0.16 (`zig cc` targeting 32-bit Windows).
-- `src/patcher`: the patcher, in C#, built with the compiler that ships with Windows (.NET Framework 4).
-
-`src\build.cmd` builds both into `GeneralsBorderless.exe` (with the DLL embedded). Zig must be on `PATH`.
-
-GitHub Actions builds every push; the zip is attached to the run.
-
-## Releasing an update
-
-1. Bump the version in `src/proxy/borderless.c` (`Marker`) and `src/proxy/version.rc`.
-2. Commit, then tag and push: `git tag v1.1.0` and `git push origin main v1.1.0`.
-3. The workflow builds it and publishes the release with `GeneralsBorderless.zip`.
-
-Players update by running the new `GeneralsBorderless.exe` and clicking **Install** (it shows "Installed, older version" for folders with the old DLL).
