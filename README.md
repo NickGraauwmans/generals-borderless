@@ -43,7 +43,7 @@ Run `GeneralsBorderless.exe` again and click **Remove** (it works on the selecte
 
 ## Update
 
-Download the new version, run its `GeneralsBorderless.exe` and click **Install**. Folders with the old version say "Installed, older version".
+When a new version is out, the patcher tells you at the bottom left of its window. Download the new version, run its `GeneralsBorderless.exe` and click **Install**. Folders with the old version say "Installed, older version".
 
 ## How it works
 
