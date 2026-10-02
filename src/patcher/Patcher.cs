@@ -14,6 +14,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
@@ -52,7 +53,7 @@ static class Patcher
             return 0;
         }
         int failures = 0;
-        foreach (string dir in paths.Count > 0 ? paths.Where(IsGameFolder).Select(Normalize).ToList() : FindFolders())
+        foreach (string dir in paths.Count > 0 ? paths.SelectMany(GameFoldersIn).Distinct(StringComparer.OrdinalIgnoreCase).ToList() : FindFolders())
         {
             try { Log(action + " " + dir + ": " + (action == "install" ? Install(dir) : action == "remove" ? Remove(dir) : Describe(dir))); }
             catch (Exception e) { failures++; Log(action + " " + dir + ": failed, " + Explain(e)); }
@@ -66,10 +67,50 @@ static class Patcher
         foreach (string key in RegistryKeys)
             foreach (RegistryHive hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
                 AddFolder(found, RegString(hive, key, "InstallPath"));
+        foreach (string dir in SteamGameFolders(SteamDir())) AddFolder(found, dir);
         if (File.Exists(FoldersFile))
             foreach (string line in File.ReadAllLines(FoldersFile)) AddFolder(found, line);
         AddFolder(found, AppDomain.CurrentDomain.BaseDirectory);
         return found;
+    }
+
+    static string SteamDir()
+    {
+        string dir = RegString(RegistryHive.CurrentUser, @"Software\Valve\Steam", "SteamPath") ?? RegString(RegistryHive.LocalMachine, @"SOFTWARE\Valve\Steam", "InstallPath");
+        return dir == null ? null : dir.Replace('/', '\\');
+    }
+
+    // Steam doesn't register the game the way its original installer does, so look in every Steam
+    // library for folders with "Generals" in the name; AddFolder keeps only real game folders.
+    public static List<string> SteamGameFolders(string steamDir)
+    {
+        var dirs = new List<string>();
+        if (string.IsNullOrEmpty(steamDir)) return dirs;
+        var libraries = new List<string> { steamDir };
+        try
+        {
+            // Libraries are listed as "path"  "D:\\SteamLibrary" (older files: "1"  "D:\\SteamLibrary"); the
+            // only values in the file that are full folder paths are those libraries.
+            string vdf = Path.Combine(steamDir, @"steamapps\libraryfolders.vdf");
+            if (File.Exists(vdf))
+                foreach (Match m in Regex.Matches(File.ReadAllText(vdf), "\"([^\"]*)\""))
+                {
+                    string value = m.Groups[1].Value.Replace(@"\\", @"\");
+                    if (Regex.IsMatch(value, @"^([A-Za-z]:\\|\\\\)")) libraries.Add(value);
+                }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        catch (ArgumentException) { }
+        foreach (string library in libraries)
+        {
+            try { dirs.AddRange(Directory.GetDirectories(Path.Combine(library, @"steamapps\common"), "*Generals*")); }
+            catch (IOException) { } // library on a drive that isn't connected
+            catch (UnauthorizedAccessException) { }
+            catch (ArgumentException) { }
+            catch (NotSupportedException) { }
+        }
+        return dirs;
     }
 
     public static bool AddFolder(List<string> list, string dir)
@@ -81,9 +122,32 @@ static class Patcher
         return true;
     }
 
+    // The folder itself when it is a game folder, otherwise the game folders directly inside it, so
+    // picking a folder that holds both Generals and Zero Hour adds both.
+    public static List<string> GameFoldersIn(string dir)
+    {
+        var found = new List<string>();
+        if (AddFolder(found, dir)) return found;
+        try
+        {
+            foreach (string sub in Directory.GetDirectories(dir)) AddFolder(found, sub);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        catch (ArgumentException) { }
+        return found;
+    }
+
+    // The game's exe plus its INI archive (INI.big for Generals, INIZH.big for Zero Hour), so other games
+    // that happen to have a game.dat don't count.
     public static bool IsGameFolder(string dir)
     {
-        try { return !string.IsNullOrWhiteSpace(dir) && (File.Exists(Path.Combine(dir, "game.dat")) || File.Exists(Path.Combine(dir, "generals.exe"))); }
+        try
+        {
+            return !string.IsNullOrWhiteSpace(dir)
+                && (File.Exists(Path.Combine(dir, "game.dat")) || File.Exists(Path.Combine(dir, "generals.exe")))
+                && (File.Exists(Path.Combine(dir, "INIZH.big")) || File.Exists(Path.Combine(dir, "INI.big")));
+        }
         catch (ArgumentException) { return false; }
     }
 
@@ -323,12 +387,15 @@ class PatcherForm : Form
 
     void AddFolder()
     {
-        using (var dlg = new FolderBrowserDialog { Description = "Select a game folder: the one with game.dat or generals.exe (for example a mod that has its own copy of the game)." })
+        using (var dlg = new FolderBrowserDialog { Description = "Select your game folder (the one with game.dat or generals.exe), or the folder that holds both Generals and Zero Hour." })
         {
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            List<string> games = Patcher.GameFoldersIn(dlg.SelectedPath);
+            if (games.Count == 0) { result.Text = "No game found in that folder. Pick the folder with game.dat or generals.exe."; return; }
             var known = list.Items.Cast<ListViewItem>().Select(i => (string)i.Tag).ToList();
-            if (!Patcher.IsGameFolder(dlg.SelectedPath)) result.Text = "That folder has no game.dat or generals.exe.";
-            else if (Patcher.AddFolder(known, dlg.SelectedPath)) { AddRow(known[known.Count - 1]); FitColumns(); }
+            foreach (string game in games)
+                if (Patcher.AddFolder(known, game)) AddRow(game);
+            FitColumns();
         }
     }
 }
