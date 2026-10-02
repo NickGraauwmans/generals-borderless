@@ -342,6 +342,14 @@ static DWORD WINAPI Worker(LPVOID unused)
             {
                 realSetWindowPos(gameWnd, NULL, x, y, r.right, r.bottom, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | (framed ? SWP_FRAMECHANGED : 0));
                 Log("window %s to %dx%d at %d,%d", framed ? "made frameless" : "re-centred", r.right, r.bottom, x, y);
+                // GenTool moves the window (to the top left, below native resolution) and locks the mouse
+                // to it there; after the move that lock is in the wrong place. LockCursor re-locks it below.
+                RECT clip;
+                if (!lockCursor && GetClipCursor(&clip) && EqualRect(&clip, &now))
+                {
+                    realClipCursor(NULL);
+                    Log("released a mouse lock left at the old window position");
+                }
             }
         }
         if (lockCursor)
