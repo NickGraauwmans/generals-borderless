@@ -23,7 +23,7 @@ It is also nice if you simply like borderless fullscreen: alt-tab is quick, a se
 1. Download `GeneralsBorderless.zip` from [Releases](../../releases/latest) and unzip it.
 2. Run `GeneralsBorderless.exe`. Click **Yes** when Windows asks for admin rights (the game is in Program Files).
 3. It shows the game folders it found. Leave them ticked and click **Install**.
-   Is a mod in its own separate folder? Click **Add folder...** and pick that folder.
+   Is your game not in the list? Click **Add folder...** and pick your game folder. A folder that holds both Generals and Zero Hour works too.
 
    ![Click Install](images/install.png)
 
