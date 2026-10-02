@@ -40,6 +40,13 @@ jobs:
         shell: pwsh
         run: Join-Path $env:RUNNER_TEMP "zig-x86_64-windows-$env:ZIG_VERSION" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
+      - name: Check the version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = [regex]::Match((Get-Content src/patcher/Patcher.cs -Raw), 'AssemblyVersion\("([0-9.]+)"\)').Groups[1].Value
+          if ("v$v" -ne $env:GITHUB_REF_NAME) { throw "Tag $env:GITHUB_REF_NAME does not match the patcher version $v in src/patcher/Patcher.cs" }
+
       - name: Build
         shell: cmd
         run: src\build.cmd

@@ -9,6 +9,7 @@
 // Build with ..\build.cmd (it uses the C# compiler that ships with Windows).
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -18,22 +19,82 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
+// The release version, shown in the window; a release tag must match it (the workflow checks).
+[assembly: AssemblyVersion("1.3.0")]
+[assembly: AssemblyFileVersion("1.3.0")]
+[assembly: AssemblyTitle("Generals Borderless")]
+[assembly: AssemblyProduct("Generals Borderless")]
+
 static class Patcher
 {
     public const string AppTitle = "Generals Borderless";
+    public const string ProjectUrl = "https://github.com/NickGraauwmans/generals-borderless";
+
+    public static string ReleaseVersion
+    {
+        get { Version v = Assembly.GetExecutingAssembly().GetName().Version; return v.Major + "." + v.Minor + "." + v.Build; }
+    }
+
+    // The logo built into this exe (build.cmd: /win32icon), for the windows' title bars.
+    public static Icon AppIcon
+    {
+        get { try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { return null; } }
+    }
+
     const string Marker = "GeneralsBorderless dinput8 proxy"; // text inside our DLL, any version
     static readonly string DataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GeneralsBorderless");
     static readonly string FoldersFile = Path.Combine(DataDir, "folders.txt");
     static readonly string[] RegistryKeys = { @"SOFTWARE\Electronic Arts\EA Games\Command and Conquer Generals Zero Hour", @"SOFTWARE\Electronic Arts\EA Games\Generals" };
-    const string IniText =
-        "; Generals Borderless settings. Delete this file to get the defaults back.\r\n" +
-        "[Borderless]\r\n" +
-        "; 0 = off: the game starts exactly as it did before the patch\r\n" +
-        "Enabled=1\r\n" +
-        "; 1 = set the game resolution to the monitor's at every start, so the game covers the screen exactly\r\n" +
-        "ForceNativeResolution=1\r\n" +
-        "; 1 = keep the mouse inside the game while it has focus (edge scrolling, second monitors)\r\n" +
-        "LockCursor=1\r\n";
+    public static readonly string[] SettingNames = { "Enabled", "ForceNativeResolution", "LockCursor", "ScaleToScreen" };
+
+    static string IniText(Dictionary<string, bool> s)
+    {
+        Func<string, string> v = name => s[name] ? "1" : "0";
+        return
+            "; Generals Borderless settings. Change them with GeneralsBorderless.exe (Settings...), or delete this file to get the defaults back.\r\n" +
+            "[Borderless]\r\n" +
+            "; 0 = off: the game starts exactly as it did before the patch\r\n" +
+            "Enabled=" + v("Enabled") + "\r\n" +
+            "; 1 = set the game resolution to the monitor's at every start, so the game covers the screen exactly\r\n" +
+            "ForceNativeResolution=" + v("ForceNativeResolution") + "\r\n" +
+            "; 1 = keep the mouse inside the game while it has focus (edge scrolling, second monitors)\r\n" +
+            "LockCursor=" + v("LockCursor") + "\r\n" +
+            "; With ForceNativeResolution=0 and a lower resolution: 1 = scale the game up to fill the screen\r\n" +
+            "; (black bars if its shape differs), 0 = show it at its own size in the middle (box mode)\r\n" +
+            "ScaleToScreen=" + v("ScaleToScreen") + "\r\n";
+    }
+
+    public static Dictionary<string, bool> DefaultSettings()
+    {
+        return SettingNames.ToDictionary(n => n, n => true, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // The settings of a game folder; anything missing keeps its default (on), as in the DLL.
+    public static Dictionary<string, bool> ReadSettings(string dir)
+    {
+        Dictionary<string, bool> s = DefaultSettings();
+        string ini = Path.Combine(dir, "GeneralsBorderless.ini");
+        if (File.Exists(ini))
+            foreach (string line in File.ReadAllLines(ini))
+            {
+                Match m = Regex.Match(line, @"^\s*(\w+)\s*=\s*(-?\d+)");
+                if (m.Success && s.ContainsKey(m.Groups[1].Value)) s[m.Groups[1].Value] = m.Groups[2].Value != "0";
+            }
+        return s;
+    }
+
+    // Game folders are usually admin-only (Program Files), so the settings are changed through this
+    // patcher, which runs as administrator, rather than with Notepad.
+    public static void WriteSettings(string dir, Dictionary<string, bool> s)
+    {
+        File.WriteAllText(Path.Combine(dir, "GeneralsBorderless.ini"), IniText(s));
+    }
+
+    public static bool IsInstalled(string dir)
+    {
+        string dll = Path.Combine(dir, "dinput8.dll");
+        return File.Exists(dll) && IsOurs(File.ReadAllBytes(dll));
+    }
 
     [STAThread]
     static int Main(string[] args)
@@ -202,7 +263,7 @@ static class Patcher
             throw;
         }
         string ini = Path.Combine(dir, "GeneralsBorderless.ini");
-        if (!File.Exists(ini)) File.WriteAllText(ini, IniText);
+        if (!File.Exists(ini)) File.WriteAllText(ini, IniText(DefaultSettings()));
         Remember(dir, true);
         return foreign ? "installed (the dinput8.dll that was there is now dinput8_original.dll and still used)" : "installed";
     }
@@ -310,6 +371,7 @@ class PatcherForm : Form
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = Patcher.AppTitle;
+        Icon = Patcher.AppIcon;
         Font = SystemFonts.MessageBoxFont;
         ClientSize = new Size(860, 360);
         MinimumSize = new Size(600, 320);
@@ -321,8 +383,8 @@ class PatcherForm : Form
             UseMnemonic = false,
             Padding = new Padding(0, 0, 0, 8),
             Text = "Makes C&C Generals and Zero Hour run borderless fullscreen, whatever starts them: a launcher, " +
-                   "a shortcut or a mod. Install once, then play the way you always do.\n" +
-                   "Tick the game folders and click Install. Remove puts everything back."
+                   "a shortcut or a mod. You only need to install it once.\n\n" +
+                   "The game folders found are already selected. Click Install, or Remove to put everything back."
         };
         list.Columns.Add("Game");
         list.Columns.Add("Status");
@@ -331,24 +393,47 @@ class PatcherForm : Form
         var install = new Button { Text = "Install", AutoSize = true };
         var remove = new Button { Text = "Remove", AutoSize = true };
         var add = new Button { Text = "Add folder...", AutoSize = true };
+        var settings = new Button { Text = "Settings...", AutoSize = true };
         var close = new Button { Text = "Close", AutoSize = true };
         install.Click += (s, e) => Apply(true);
         remove.Click += (s, e) => Apply(false);
         add.Click += (s, e) => AddFolder();
+        settings.Click += (s, e) => EditSettings();
         close.Click += (s, e) => Close();
-        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, AutoSize = true };
-        buttons.Controls.AddRange(new Control[] { close, remove, install, add });
+        // Buttons grouped by what they work on: the list (under it), the selected folders' main
+        // actions (bottom right), and Close a little apart.
+        close.Margin = new Padding(18, 3, 3, 3);
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Anchor = AnchorStyles.Right };
+        buttons.Controls.AddRange(new Control[] { install, remove, close });
+        add.Anchor = AnchorStyles.Left;
+        settings.Anchor = AnchorStyles.Right;
+        var listTools = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(0, 6, 0, 0) };
+        listTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        listTools.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        listTools.Controls.Add(add, 0, 0);
+        listTools.Controls.Add(settings, 1, 0);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(12) };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(12) };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // else the column grows with the folder paths
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(intro, 0, 0);
         layout.Controls.Add(list, 0, 1);
-        layout.Controls.Add(result, 0, 2);
-        layout.Controls.Add(buttons, 0, 3);
+        layout.Controls.Add(listTools, 0, 2);
+        layout.Controls.Add(result, 0, 3);
+        // bottom row: version and a link to the project on the left, buttons on the right
+        string versionText = "v" + Patcher.ReleaseVersion + "  \u00b7  ", linkText = "github.com/NickGraauwmans/generals-borderless";
+        var link = new LinkLabel { Text = versionText + linkText, LinkArea = new LinkArea(versionText.Length, linkText.Length), AutoSize = true, UseMnemonic = false, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, 12, 0) };
+        link.LinkClicked += (s, e) => OpenInBrowser(Patcher.ProjectUrl);
+        var bottom = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill, AutoSize = true };
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // the link, at the left
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));     // the buttons, at the right
+        bottom.Controls.Add(link, 0, 0);
+        bottom.Controls.Add(buttons, 1, 0);
+        layout.Controls.Add(bottom, 0, 4);
         Controls.Add(layout);
         AcceptButton = install;
         CancelButton = close;
@@ -369,9 +454,23 @@ class PatcherForm : Form
 
     void AddRow(string dir)
     {
-        var item = new ListViewItem(new[] { Patcher.GameName(dir), Patcher.Describe(dir), dir }) { Checked = true, Tag = dir };
+        var item = new ListViewItem(new[] { Patcher.GameName(dir), "", dir }) { Checked = true, Tag = dir, UseItemStyleForSubItems = false };
         list.Items.Add(item);
+        ShowStatus(item);
     }
+
+    // Installed in green, an older version in amber (it wants updating), not installed in grey.
+    static void ShowStatus(ListViewItem item)
+    {
+        string status = Patcher.Describe((string)item.Tag);
+        ListViewItem.ListViewSubItem cell = item.SubItems[StatusColumn];
+        cell.Text = status;
+        cell.ForeColor = status.StartsWith("Installed, older") ? Color.FromArgb(179, 89, 0)
+                       : status.StartsWith("Installed") ? Color.FromArgb(26, 127, 55)
+                       : SystemColors.GrayText;
+    }
+
+    static string Folders(int n) { return n == 1 ? "1 game folder" : n + " game folders"; }
 
     void FitColumns()
     {
@@ -380,21 +479,34 @@ class PatcherForm : Form
         list.Columns[GameColumn].Width += 24; // room for the check box
     }
 
+    // One summary line (the Status column shows each folder), plus anything that needs attention.
     void Apply(bool install)
     {
-        var lines = new List<string>();
+        int done = 0;
+        var notes = new List<string>();
         foreach (ListViewItem item in list.CheckedItems)
         {
             string dir = (string)item.Tag;
             string outcome;
-            try { outcome = install ? Patcher.Install(dir) : Patcher.Remove(dir); }
-            catch (Exception e) { outcome = "failed: " + Patcher.Explain(e); }
+            try
+            {
+                outcome = install ? Patcher.Install(dir) : Patcher.Remove(dir);
+                done++;
+                if (outcome.Contains("(")) notes.Add(item.Text + ": " + outcome); // e.g. another tool's dinput8.dll was kept
+            }
+            catch (Exception e)
+            {
+                outcome = "failed: " + Patcher.Explain(e);
+                notes.Add(item.Text + " (" + dir + "): not done, " + Patcher.Explain(e));
+            }
             Patcher.Log((install ? "install " : "remove ") + dir + ": " + outcome);
-            lines.Add(item.Text + ": " + outcome);
-            item.SubItems[StatusColumn].Text = Patcher.Describe(dir);
+            ShowStatus(item);
         }
-        if (lines.Count == 0) lines.Add("Tick at least one game folder first.");
-        else if (install) lines.Add("Start the game the way you always do.");
+        if (list.CheckedItems.Count == 0) { result.Text = "Select at least one game folder first."; return; }
+        var lines = new List<string>();
+        if (done > 0) lines.Add((install ? "Installed in " : "Removed from ") + Folders(done) + ".");
+        lines.AddRange(notes);
+        if (install && done > 0) { lines.Add(""); lines.Add("You can start the game now."); }
         result.Text = string.Join("\n", lines);
         FitColumns();
     }
@@ -411,5 +523,102 @@ class PatcherForm : Form
                 if (Patcher.AddFolder(known, game)) AddRow(game);
             FitColumns();
         }
+    }
+
+    // This exe runs as administrator; let Explorer open the page so the browser doesn't.
+    static void OpenInBrowser(string url)
+    {
+        try { Process.Start(new ProcessStartInfo("explorer.exe", "\"" + url + "\"") { UseShellExecute = false }); }
+        catch (Exception) { }
+    }
+
+    void EditSettings()
+    {
+        var dirs = list.CheckedItems.Cast<ListViewItem>().Select(i => (string)i.Tag).Where(Patcher.IsInstalled).ToList();
+        if (dirs.Count == 0) { result.Text = "Install the patch first, then select the game folders whose settings you want to change."; return; }
+        using (var dlg = new SettingsForm(Patcher.ReadSettings(dirs[0])))
+        {
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            int done = 0;
+            var notes = new List<string>();
+            foreach (string dir in dirs)
+            {
+                string outcome;
+                try { Patcher.WriteSettings(dir, dlg.Settings); outcome = "settings saved"; done++; }
+                catch (Exception e) { outcome = "failed: " + Patcher.Explain(e); notes.Add(Patcher.GameName(dir) + " (" + dir + "): not saved, " + Patcher.Explain(e)); }
+                Patcher.Log("settings " + dir + ": " + outcome);
+            }
+            var lines = new List<string>();
+            if (done > 0) lines.Add("Settings saved for " + Folders(done) + ".");
+            lines.AddRange(notes);
+            if (done > 0) { lines.Add(""); lines.Add("They take effect the next time the game starts."); }
+            result.Text = string.Join("\n", lines);
+        }
+    }
+}
+
+class SettingsForm : Form
+{
+    readonly CheckBox enabled = Box("Borderless fullscreen (off: the game starts like before the patch)");
+    readonly CheckBox native = Box("Always use my screen's resolution");
+    readonly CheckBox scale = Box("With a lower resolution: scale it up to fill the screen (off: a box in the middle)");
+    readonly CheckBox lockCursor = Box("Keep the mouse inside the game while you play");
+
+    public Dictionary<string, bool> Settings { get; private set; }
+
+    public SettingsForm(Dictionary<string, bool> s)
+    {
+        SuspendLayout();
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        Text = Patcher.AppTitle + " settings";
+        Icon = Patcher.AppIcon;
+        Font = SystemFonts.MessageBoxFont;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.CenterParent;
+        AutoSize = true;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+
+        enabled.Checked = s["Enabled"];
+        native.Checked = s["ForceNativeResolution"];
+        scale.Checked = s["ScaleToScreen"];
+        lockCursor.Checked = s["LockCursor"];
+        enabled.CheckedChanged += (a, b) => UpdateEnabled();
+        native.CheckedChanged += (a, b) => UpdateEnabled();
+        UpdateEnabled();
+
+        var note = new Label { AutoSize = true, UseMnemonic = false, Padding = new Padding(0, 10, 0, 6), Text = "For the selected game folders. Changes take effect the next time the game starts." };
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, AutoSize = true };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+        ok.Click += (a, b) => Settings = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Enabled", enabled.Checked }, { "ForceNativeResolution", native.Checked },
+            { "ScaleToScreen", scale.Checked }, { "LockCursor", lockCursor.Checked }
+        };
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill };
+        buttons.Controls.AddRange(new Control[] { cancel, ok });
+
+        var layout = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(12) };
+        foreach (Control c in new Control[] { enabled, native, scale, lockCursor, note, buttons }) layout.Controls.Add(c);
+        Controls.Add(layout);
+        AcceptButton = ok;
+        CancelButton = cancel;
+        ResumeLayout(false);
+        PerformLayout();
+    }
+
+    // The scaling choice only matters when the screen's resolution isn't forced, and nothing does when it's off.
+    void UpdateEnabled()
+    {
+        native.Enabled = lockCursor.Enabled = enabled.Checked;
+        scale.Enabled = enabled.Checked && !native.Checked;
+    }
+
+    static CheckBox Box(string text)
+    {
+        return new CheckBox { Text = text, AutoSize = true, UseMnemonic = false, Padding = new Padding(0, 3, 0, 3) };
     }
 }

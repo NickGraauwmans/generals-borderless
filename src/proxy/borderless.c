@@ -15,13 +15,18 @@
 #include <shlobj.h>
 
 // The patcher recognises its own DLL by this text, so keep it in the binary.
-static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.2";
+static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.3";
 static const DWORD FrameStyles = WS_CAPTION | WS_THICKFRAME;
 static const DWORD FrameExStyles = WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
 
 static HMODULE self, realDInput;
-static HWND gameWnd;
-static BOOL managed, forceNativeRes = TRUE, lockCursor = TRUE;
+static HWND gameWnd, backdrop;
+static BOOL managed, forceNativeRes = TRUE, lockCursor = TRUE, scaleToScreen = TRUE;
+// The size the game gave its window, which is what it renders at; with ScaleToScreen the real window
+// is that size scaled up to fill the monitor, and the game is shown its own size and mouse positions.
+static int gameW, gameH;
+static BOOL gameSized; // set once the game sized its window for its resolution (after the splash screen)
+static WNDPROC gameProc;
 static char logPath[MAX_PATH];
 
 static int (__cdecl *realGetMainArgs)(int *, char ***, char ***, int, void *);
@@ -29,6 +34,9 @@ static LPSTR (WINAPI *realGetCommandLineA)(void);
 static HWND (WINAPI *realCreateWindowExA)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
 static BOOL (WINAPI *realSetWindowPos)(HWND, HWND, int, int, int, int, UINT);
 static BOOL (WINAPI *realClipCursor)(const RECT *);
+static BOOL (WINAPI *realGetClientRect)(HWND, RECT *);
+static BOOL (WINAPI *realGetWindowRect)(HWND, RECT *);
+static BOOL (WINAPI *realGetCursorPos)(POINT *);
 
 static void Log(const char *fmt, ...)
 {
@@ -126,6 +134,48 @@ static void CenterOnMonitor(HMONITOR monitor, int w, int h, int *x, int *y)
 static BOOL GameActive(void)
 {
     return gameWnd && GetForegroundWindow() == gameWnd && !IsIconic(gameWnd);
+}
+
+// Where the real window goes for a game size of w x h: scaled up (or down) to fit the monitor while
+// keeping its shape, or at its own size (box mode, and the splash screen) - centred either way.
+static void TargetRect(HMONITOR monitor, int w, int h, RECT *r, RECT *mon)
+{
+    MONITORINFO mi = { sizeof mi };
+    GetMonitorInfoA(monitor, &mi);
+    *mon = mi.rcMonitor;
+    int mw = mi.rcMonitor.right - mi.rcMonitor.left, mh = mi.rcMonitor.bottom - mi.rcMonitor.top;
+    if (scaleToScreen && gameSized && w > 0 && h > 0 && (w != mw || h != mh))
+    {
+        if ((long long)mw * h <= (long long)mh * w) { h = (int)((long long)h * mw / w); w = mw; } // fits the width
+        else { w = (int)((long long)w * mh / h); h = mh; }                                       // fits the height
+    }
+    int x, y;
+    CenterOnMonitor(monitor, w, h, &x, &y);
+    SetRect(r, x, y, x + w, y + h);
+}
+
+// When the real window is bigger or smaller than the size the game thinks it has: the real window rect
+// and the scale per axis. The game's coordinates use the same top left corner, only scaled.
+static BOOL Scaled(RECT *real, double *sx, double *sy)
+{
+    if (!managed || !gameW || !gameH || !GetWindowRect(gameWnd, real)) return FALSE;
+    int rw = real->right - real->left, rh = real->bottom - real->top;
+    if (rw == gameW && rh == gameH) return FALSE;
+    *sx = (double)rw / gameW;
+    *sy = (double)rh / gameH;
+    return TRUE;
+}
+
+static void ToGame(POINT *p, const RECT *real, double sx, double sy)
+{
+    p->x = real->left + (int)((p->x - real->left) / sx);
+    p->y = real->top + (int)((p->y - real->top) / sy);
+}
+
+static void ToReal(POINT *p, const RECT *real, double sx, double sy)
+{
+    p->x = real->left + (int)((p->x - real->left) * sx);
+    p->y = real->top + (int)((p->y - real->top) * sy);
 }
 
 // Documents\<user data folder>\Options.ini, the folder name as the game itself picks it.
@@ -322,26 +372,29 @@ static DWORD WINAPI Worker(LPVOID unused)
         {
             LONG style = GetWindowLongA(gameWnd, GWL_STYLE), exStyle = GetWindowLongA(gameWnd, GWL_EXSTYLE);
             BOOL framed = (style & FrameStyles) || (exStyle & FrameExStyles);
-            RECT r;
             if (framed)
             {
-                GetClientRect(gameWnd, &r);
                 SetWindowLongA(gameWnd, GWL_STYLE, (style & ~FrameStyles) | WS_POPUP);
                 SetWindowLongA(gameWnd, GWL_EXSTYLE, exStyle & ~FrameExStyles);
             }
-            else
-            {
-                GetWindowRect(gameWnd, &r);
-                OffsetRect(&r, -r.left, -r.top);
-            }
-            RECT now;
+            RECT now, target, mon;
             GetWindowRect(gameWnd, &now);
-            int x, y;
-            CenterOnMonitor(MonitorFromWindow(gameWnd, MONITOR_DEFAULTTONEAREST), r.right, r.bottom, &x, &y);
-            if (framed || now.left != x || now.top != y)
+            TargetRect(MonitorFromWindow(gameWnd, MONITOR_DEFAULTTONEAREST), gameW, gameH, &target, &mon);
+            int x = target.left, y = target.top, w = target.right - target.left, h = target.bottom - target.top;
+            if (backdrop)
             {
-                realSetWindowPos(gameWnd, NULL, x, y, r.right, r.bottom, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | (framed ? SWP_FRAMECHANGED : 0));
-                Log("window %s to %dx%d at %d,%d", framed ? "made frameless" : "re-centred", r.right, r.bottom, x, y);
+                // black behind the game where scaling leaves bars (a 4:3 game on a wide screen)
+                BOOL bars = gameSized && !EqualRect(&target, &mon); // not behind the splash screen
+                if (bars != (IsWindowVisible(backdrop) != 0))
+                    realSetWindowPos(backdrop, NULL, mon.left, mon.top, mon.right - mon.left, mon.bottom - mon.top,
+                                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | (bars ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
+                if (bars && GetWindow(gameWnd, GW_HWNDNEXT) != backdrop)
+                    realSetWindowPos(backdrop, gameWnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+            }
+            if (framed || !EqualRect(&now, &target))
+            {
+                realSetWindowPos(gameWnd, NULL, x, y, w, h, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | (framed ? SWP_FRAMECHANGED : 0));
+                Log("window %s to %dx%d at %d,%d", framed ? "made frameless" : "re-centred", w, h, x, y);
                 // GenTool moves the window (to the top left, below native resolution) and locks the mouse
                 // to it there; after the move that lock is in the wrong place. LockCursor re-locks it below.
                 RECT clip;
@@ -371,7 +424,36 @@ static DWORD WINAPI Worker(LPVOID unused)
         Sleep(100);
     }
     if (clipped) realClipCursor(NULL);
+    if (backdrop) ShowWindowAsync(backdrop, SW_HIDE);
     return 0;
+}
+
+// The game reads mouse positions from its window messages; when the window is scaled, hand it
+// positions in its own (unscaled) size.
+static LRESULT CALLBACK MouseScaleProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    RECT real;
+    double sx, sy;
+    if (msg >= WM_MOUSEFIRST && msg <= 0x020E && Scaled(&real, &sx, &sy))
+    {
+        POINT p = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+        if (msg == WM_MOUSEWHEEL || msg == 0x020E) ToGame(&p, &real, sx, sy); // screen coordinates (0x020E: horizontal wheel)
+        else { p.x = (int)(p.x / sx); p.y = (int)(p.y / sy); }               // window coordinates
+        lParam = MAKELPARAM((short)p.x, (short)p.y);
+    }
+    return CallWindowProcA(gameProc, hwnd, msg, wParam, lParam);
+}
+
+static HWND CreateBackdrop(void)
+{
+    WNDCLASSA wc = { 0 };
+    wc.lpfnWndProc = DefWindowProcA;
+    wc.hInstance = self;
+    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    wc.hCursor = LoadCursorA(NULL, (LPCSTR)IDC_ARROW);
+    wc.lpszClassName = "GeneralsBorderlessBackdrop";
+    RegisterClassA(&wc);
+    return CreateWindowExA(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, wc.lpszClassName, "", WS_POPUP, 0, 0, 1, 1, NULL, NULL, self, NULL);
 }
 
 static HWND WINAPI HookCreateWindowExA(DWORD exStyle, LPCSTR cls, LPCSTR title, DWORD style, int x, int y, int w, int h, HWND parent, HMENU menu, HINSTANCE inst, LPVOID param)
@@ -393,6 +475,9 @@ static HWND WINAPI HookCreateWindowExA(DWORD exStyle, LPCSTR cls, LPCSTR title, 
         exStyle &= ~FrameExStyles;
         POINT centre = { x + w / 2, y + h / 2 };
         CenterOnMonitor(MonitorFromPoint(centre, MONITOR_DEFAULTTOPRIMARY), w, h, &x, &y);
+        gameW = w;
+        gameH = h;
+        if (scaleToScreen) backdrop = CreateBackdrop(); // on the game's thread, so its message loop paints it
     }
     HWND hwnd = realCreateWindowExA(exStyle, cls, title, style, x, y, w, h, parent, menu, inst, param);
     if (game && hwnd)
@@ -400,7 +485,11 @@ static HWND WINAPI HookCreateWindowExA(DWORD exStyle, LPCSTR cls, LPCSTR title, 
         gameWnd = hwnd;
         managed = windowed;
         Log("game window created %s (style %08lX)", windowed ? "frameless" : "fullscreen, left alone", style);
-        if (managed) CloseHandle(CreateThread(NULL, 0, Worker, NULL, 0, NULL));
+        if (managed)
+        {
+            gameProc = (WNDPROC)SetWindowLongA(hwnd, GWL_WNDPROC, (LONG)MouseScaleProc);
+            CloseHandle(CreateThread(NULL, 0, Worker, NULL, 0, NULL));
+        }
     }
     return hwnd;
 }
@@ -411,20 +500,23 @@ static BOOL WINAPI HookSetWindowPos(HWND hwnd, HWND after, int x, int y, int cx,
 {
     if (managed && hwnd == gameWnd && (flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE))
     {
-        flags &= ~SWP_NOMOVE;
-        int w = cx, h = cy;
-        if (flags & SWP_NOSIZE)
+        if (!(flags & SWP_NOSIZE))
         {
-            RECT r;
-            GetWindowRect(hwnd, &r);
-            w = r.right - r.left; h = r.bottom - r.top;
+            gameW = cx; // the game's size for its resolution: frameless, so window = client = resolution
+            gameH = cy;
+            gameSized = TRUE;
         }
-        CenterOnMonitor(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), w, h, &x, &y);
+        RECT target, mon;
+        TargetRect(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), gameW, gameH, &target, &mon);
+        x = target.left; y = target.top;
+        cx = target.right - target.left; cy = target.bottom - target.top;
+        flags &= ~(SWP_NOMOVE | SWP_NOSIZE);
     }
     return realSetWindowPos(hwnd, after, x, y, cx, cy, flags);
 }
 
-// When the game lets go of the cursor while it still has focus, keep it inside the window.
+// When the game lets go of the cursor while it still has focus, keep it inside the window; a lock the
+// game sets itself is in its own (unscaled) coordinates.
 static BOOL WINAPI HookClipCursor(const RECT *rect)
 {
     if (managed && lockCursor && !rect && GameActive())
@@ -433,7 +525,51 @@ static BOOL WINAPI HookClipCursor(const RECT *rect)
         GetWindowRect(gameWnd, &w);
         return realClipCursor(&w);
     }
+    RECT real;
+    double sx, sy;
+    if (rect && gameWnd && Scaled(&real, &sx, &sy))
+    {
+        POINT a = { rect->left, rect->top }, b = { rect->right, rect->bottom };
+        ToReal(&a, &real, sx, sy);
+        ToReal(&b, &real, sx, sy);
+        RECT r = { a.x, a.y, b.x, b.y };
+        return realClipCursor(&r);
+    }
     return realClipCursor(rect);
+}
+
+// The game is shown its own size and mouse position, not the scaled real ones.
+static BOOL WINAPI HookGetClientRect(HWND hwnd, RECT *r)
+{
+    RECT real;
+    double sx, sy;
+    if (hwnd == gameWnd && Scaled(&real, &sx, &sy))
+    {
+        SetRect(r, 0, 0, gameW, gameH);
+        return TRUE;
+    }
+    return realGetClientRect(hwnd, r);
+}
+
+static BOOL WINAPI HookGetWindowRect(HWND hwnd, RECT *r)
+{
+    RECT real;
+    double sx, sy;
+    if (hwnd == gameWnd && Scaled(&real, &sx, &sy))
+    {
+        SetRect(r, real.left, real.top, real.left + gameW, real.top + gameH);
+        return TRUE;
+    }
+    return realGetWindowRect(hwnd, r);
+}
+
+static BOOL WINAPI HookGetCursorPos(POINT *p)
+{
+    BOOL ok = realGetCursorPos(p);
+    RECT real;
+    double sx, sy;
+    if (ok && Scaled(&real, &sx, &sy)) ToGame(p, &real, sx, sy);
+    return ok;
 }
 
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
@@ -461,16 +597,24 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
     }
     forceNativeRes = GetPrivateProfileIntA("Borderless", "ForceNativeResolution", 1, ini);
     lockCursor = GetPrivateProfileIntA("Borderless", "LockCursor", 1, ini);
+    scaleToScreen = GetPrivateProfileIntA("Borderless", "ScaleToScreen", 1, ini);
 
     realGetMainArgs = HookImport(main, "msvcrt.dll", "__getmainargs", HookGetMainArgs);
     if (!realGetMainArgs) realGetCommandLineA = HookImport(main, "kernel32.dll", "GetCommandLineA", HookGetCommandLineA);
     realCreateWindowExA = HookImport(main, "user32.dll", "CreateWindowExA", HookCreateWindowExA);
     realSetWindowPos = HookImport(main, "user32.dll", "SetWindowPos", HookSetWindowPos);
     realClipCursor = HookImport(main, "user32.dll", "ClipCursor", HookClipCursor);
-    Log("%s: %s, hooks: args=%d window=%d move=%d cursor=%d", Marker, exe,
-        realGetMainArgs || realGetCommandLineA, realCreateWindowExA != NULL, realSetWindowPos != NULL, realClipCursor != NULL);
+    realGetClientRect = HookImport(main, "user32.dll", "GetClientRect", HookGetClientRect);
+    realGetWindowRect = HookImport(main, "user32.dll", "GetWindowRect", HookGetWindowRect);
+    realGetCursorPos = HookImport(main, "user32.dll", "GetCursorPos", HookGetCursorPos);
+    Log("%s: %s, hooks: args=%d window=%d move=%d cursor=%d scale=%d%d%d, ScaleToScreen=%d", Marker, exe,
+        realGetMainArgs || realGetCommandLineA, realCreateWindowExA != NULL, realSetWindowPos != NULL, realClipCursor != NULL,
+        realGetClientRect != NULL, realGetWindowRect != NULL, realGetCursorPos != NULL, scaleToScreen);
     if (!realSetWindowPos) realSetWindowPos = SetWindowPos;
     if (!realClipCursor) realClipCursor = ClipCursor;
+    if (!realGetClientRect) realGetClientRect = GetClientRect;
+    if (!realGetWindowRect) realGetWindowRect = GetWindowRect;
+    if (!realGetCursorPos) realGetCursorPos = GetCursorPos;
     return TRUE;
 }
 
