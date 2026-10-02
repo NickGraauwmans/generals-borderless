@@ -15,7 +15,7 @@
 #include <shlobj.h>
 
 // The patcher recognises its own DLL by this text, so keep it in the binary.
-static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.0";
+static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.1";
 static const DWORD FrameStyles = WS_CAPTION | WS_THICKFRAME;
 static const DWORD FrameExStyles = WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
 
@@ -218,6 +218,20 @@ done:
     HeapFree(GetProcessHeap(), 0, out);
 }
 
+static void MakeThreadDpiAware(void)
+{
+    HANDLE (WINAPI *setThread)(HANDLE) = (void *)GetProcAddress(GetModuleHandleA("user32.dll"), "SetThreadDpiAwarenessContext");
+    if (setThread) setThread((HANDLE)-4); // per-monitor v2
+}
+
+static int ThreadDpiAwareness(void)
+{
+    HMODULE user32 = GetModuleHandleA("user32.dll");
+    HANDLE (WINAPI *getThread)(void) = (void *)GetProcAddress(user32, "GetThreadDpiAwarenessContext");
+    int (WINAPI *awarenessOf)(HANDLE) = (void *)GetProcAddress(user32, "GetAwarenessFromDpiAwarenessContext");
+    return getThread && awarenessOf ? awarenessOf(getThread()) : -1;
+}
+
 // Runs once, before the game creates its window or reads Options.ini.
 static void Prepare(void)
 {
@@ -227,7 +241,12 @@ static void Prepare(void)
     HMODULE user32 = GetModuleHandleA("user32.dll");
     BOOL (WINAPI *setContext)(HANDLE) = (void *)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
     BOOL (WINAPI *setAware)(void) = (void *)GetProcAddress(user32, "SetProcessDPIAware");
-    if (!(setContext && setContext((HANDLE)-4)) && setAware) setAware(); // per-monitor v2, else system aware
+    BOOL processSet = setContext && setContext((HANDLE)-4); // per-monitor v2
+    if (!setContext && setAware) setAware();                // older Windows: system aware
+    // The process setting can already be locked (Steam's build ends up DPI unaware), but the game
+    // thread's own setting still decides how its window is scaled, so set that too.
+    MakeThreadDpiAware();
+    Log("DPI aware: process %s, game thread %d (2 = per monitor)", processSet ? "set" : "already fixed", ThreadDpiAwareness());
     if (forceNativeRes) SetNativeResolution();
 }
 
@@ -296,6 +315,7 @@ static LPSTR WINAPI HookGetCommandLineA(void)
 static DWORD WINAPI Worker(LPVOID unused)
 {
     BOOL clipped = FALSE;
+    MakeThreadDpiAware(); // same pixel coordinates as the game thread
     while (IsWindow(gameWnd))
     {
         if (!IsIconic(gameWnd))
