@@ -92,7 +92,7 @@ static class Patcher
     public static string GameName(string dir)
     {
         bool zeroHour = File.Exists(Path.Combine(dir, "INIZH.big")) || File.Exists(Path.Combine(dir, "WindowZH.big"));
-        return (zeroHour ? "Zero Hour" : "Generals") + (File.Exists(Path.Combine(dir, "ShockWaveLauncher.exe")) ? " + ShockWave" : "");
+        return zeroHour ? "Zero Hour" : "Generals";
     }
 
     public static string Describe(string dir)
@@ -242,8 +242,8 @@ class PatcherForm : Form
             AutoSize = true,
             UseMnemonic = false,
             Padding = new Padding(0, 0, 0, 8),
-            Text = "Makes C&C Generals and Zero Hour run borderless fullscreen, whatever starts them: the ShockWave launcher, " +
-                   "a shortcut or any other mod. Install once, then play the way you always do.\n" +
+            Text = "Makes C&C Generals and Zero Hour run borderless fullscreen, whatever starts them: a launcher, " +
+                   "a shortcut or a mod. Install once, then play the way you always do.\n" +
                    "Tick the game folders and click Install. Remove puts everything back."
         };
         list.Columns.Add("Game");
