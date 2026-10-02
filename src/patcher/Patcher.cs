@@ -20,8 +20,8 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 // The release version, shown in the window; a release tag must match it (the workflow checks).
-[assembly: AssemblyVersion("1.3.0")]
-[assembly: AssemblyFileVersion("1.3.0")]
+[assembly: AssemblyVersion("1.3.1")]
+[assembly: AssemblyFileVersion("1.3.1")]
 [assembly: AssemblyTitle("Generals Borderless")]
 [assembly: AssemblyProduct("Generals Borderless")]
 
@@ -128,11 +128,45 @@ static class Patcher
         foreach (string key in RegistryKeys)
             foreach (RegistryHive hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
                 AddFolder(found, RegString(hive, key, "InstallPath"));
+        foreach (string dir in InstalledAppFolders()) AddFolder(found, dir);
         foreach (string dir in SteamGameFolders(SteamDir())) AddFolder(found, dir);
         if (File.Exists(FoldersFile))
             foreach (string line in File.ReadAllLines(FoldersFile)) AddFolder(found, line);
         AddFolder(found, AppDomain.CurrentDomain.BaseDirectory);
         return found;
+    }
+
+    // Installers also list the game in Windows' installed apps with its folder. That still points to the
+    // right place when another install (Steam on its first start) has taken over the InstallPath above.
+    // The folder can hold both games (repacks), so look one level down too.
+    static List<string> InstalledAppFolders()
+    {
+        var dirs = new List<string>();
+        foreach (RegistryHive hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                try
+                {
+                    using (RegistryKey apps = RegistryKey.OpenBaseKey(hive, view).OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"))
+                    {
+                        if (apps == null) continue;
+                        foreach (string name in apps.GetSubKeyNames())
+                            try
+                            {
+                                using (RegistryKey app = apps.OpenSubKey(name))
+                                {
+                                    string title = app == null ? null : app.GetValue("DisplayName") as string;
+                                    string location = app == null ? null : app.GetValue("InstallLocation") as string;
+                                    if (title != null && Regex.IsMatch(title, @"Generals|Zero Hour|Command (&|and) Conquer|C&C", RegexOptions.IgnoreCase))
+                                        dirs.AddRange(GameFoldersIn(location));
+                                }
+                            }
+                            catch (Exception) { }
+                    }
+                }
+                catch (Exception) { }
+            }
+        return dirs;
     }
 
     static string SteamDir()
@@ -264,7 +298,7 @@ static class Patcher
         }
         string ini = Path.Combine(dir, "GeneralsBorderless.ini");
         if (!File.Exists(ini)) File.WriteAllText(ini, IniText(DefaultSettings()));
-        Remember(dir, true);
+        Remember(dir);
         return foreign ? "installed (the dinput8.dll that was there is now dinput8_original.dll and still used)" : "installed";
     }
 
@@ -276,7 +310,6 @@ static class Patcher
         if (File.Exists(dll) && IsOurs(File.ReadAllBytes(dll))) { File.Delete(dll); removed = true; }
         if (removed && File.Exists(original)) File.Move(original, dll);
         if (File.Exists(ini)) { File.Delete(ini); removed = true; }
-        Remember(dir, false);
         return removed ? "removed" : "was not installed";
     }
 
@@ -328,13 +361,15 @@ static class Patcher
         return embedded;
     }
 
-    // Folders added by hand are remembered, so Remove still finds them later.
-    static void Remember(string dir, bool installed)
+    // Folders added by hand or installed into are remembered, also after Remove, so they stay in the
+    // list when nothing else finds them (e.g. the registry points to another install by now).
+    // A folder that is no longer a game folder drops out of the list by itself (AddFolder).
+    public static void Remember(string dir)
     {
         Directory.CreateDirectory(DataDir);
         var dirs = File.Exists(FoldersFile) ? File.ReadAllLines(FoldersFile).Where(l => l.Trim().Length > 0).ToList() : new List<string>();
-        dirs.RemoveAll(d => string.Equals(d.Trim().TrimEnd('\\'), dir, StringComparison.OrdinalIgnoreCase));
-        if (installed) dirs.Add(dir);
+        if (dirs.Any(d => string.Equals(d.Trim().TrimEnd('\\'), dir, StringComparison.OrdinalIgnoreCase))) return;
+        dirs.Add(dir);
         File.WriteAllLines(FoldersFile, dirs.ToArray());
     }
 
@@ -520,7 +555,12 @@ class PatcherForm : Form
             if (games.Count == 0) { result.Text = "No game found in that folder. Pick the folder with game.dat or generals.exe."; return; }
             var known = list.Items.Cast<ListViewItem>().Select(i => (string)i.Tag).ToList();
             foreach (string game in games)
+            {
                 if (Patcher.AddFolder(known, game)) AddRow(game);
+                try { Patcher.Remember(game); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
             FitColumns();
         }
     }
