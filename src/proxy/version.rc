@@ -1,0 +1,22 @@
+#include <windows.h>
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILETYPE VFT_DLL
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "FileDescription", "Generals Borderless (DirectInput 8 proxy)"
+      VALUE "ProductName", "Generals Borderless"
+      VALUE "FileVersion", "1.0.0.0"
+      VALUE "OriginalFilename", "dinput8.dll"
+      VALUE "Comments", "Runs C&C Generals / Zero Hour borderless fullscreen; forwards DirectInput to the system dinput8.dll."
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

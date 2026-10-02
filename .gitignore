@@ -1,0 +1,9 @@
+# Built by srcuild.cmd and by GitHub Actions; published as release assets, not committed.
+*.exe
+*.dll
+*.zip
+*.lib
+*.pdb
+*.obj
+*.new
+dist/

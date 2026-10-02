@@ -1,0 +1,67 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      ZIG_VERSION: 0.16.0
+      ZIG_SHA256: 68659EB5F1E4EB1437A722F1DD889C5A322C9954607F5EDCF337BC3684A75A7E
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache Zig
+        id: zig-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/zig-x86_64-windows-${{ env.ZIG_VERSION }}
+          key: zig-${{ env.ZIG_VERSION }}-windows
+
+      - name: Download Zig
+        if: steps.zig-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'zig.zip'
+          Invoke-WebRequest "https://ziglang.org/download/$env:ZIG_VERSION/zig-x86_64-windows-$env:ZIG_VERSION.zip" -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($hash -ne $env:ZIG_SHA256) { throw "Zig download checksum mismatch: $hash" }
+          Expand-Archive $zip $env:RUNNER_TEMP
+
+      - name: Add Zig to PATH
+        shell: pwsh
+        run: Join-Path $env:RUNNER_TEMP "zig-x86_64-windows-$env:ZIG_VERSION" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: Build
+        shell: cmd
+        run: src\build.cmd
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $dir = 'dist\GeneralsBorderless'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item GeneralsBorderless.exe $dir
+          Copy-Item README.md "$dir\README.txt"
+          Compress-Archive $dir GeneralsBorderless.zip -Force
+          Get-FileHash GeneralsBorderless.exe, GeneralsBorderless.zip -Algorithm SHA256 | Format-Table Hash, Path -AutoSize
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: GeneralsBorderless
+          path: GeneralsBorderless.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME GeneralsBorderless.zip --title "Generals Borderless $env:GITHUB_REF_NAME" --generate-notes

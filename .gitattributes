@@ -1,0 +1,9 @@
+* text=auto
+# cmd.exe needs CRLF; the rest is kept CRLF for Windows editors.
+*.cmd text eol=crlf
+*.c text eol=crlf
+*.cs text eol=crlf
+*.def text eol=crlf
+*.rc text eol=crlf
+*.manifest text eol=crlf
+*.md text eol=crlf
