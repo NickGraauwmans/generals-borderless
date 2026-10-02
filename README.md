@@ -1,57 +1,67 @@
 # Generals Borderless
 
-A fix for the stutter and hitching in **C&C Generals** and **Zero Hour** fullscreen on Windows 11, including **ShockWave** and other mods.
+Fixes the stutter and hitching in **C&C Generals** and **Zero Hour** on Windows 11. Works with **ShockWave** and other mods too.
 
-Since about September 2026, exclusive fullscreen in these games stutters and hitches on Windows 11. Windowed mode runs smoothly, but it has a title bar and the taskbar covers the bottom of the game. This patch runs the game windowed but without a frame, laid exactly over your monitor: it looks like fullscreen and runs as smoothly as windowed mode.
+## The problem
 
-The patch is installed once. After that the game always runs this way, however it is started: the ShockWave launcher (LAUNCH, QUICKSTART, with or without WINDOWED), a shortcut, GenPatcher's launcher, other mods. No game data is changed, so LAN games still work with players who don't have the patch.
+Since about September 2026, these games stutter and hitch in fullscreen on Windows 11. In windowed mode they run smoothly, but then you get a title bar, and the taskbar hides the bottom of the game.
 
-Even without the hitching it is a handy way to play: borderless fullscreen, where alt-tab and a second monitor work like with any other window, and the mouse stays inside the game while it has focus, so edge scrolling keeps working.
+## What the patch does
+
+It runs the game in a window without a border that fills your whole screen. It looks just like fullscreen, but it runs as smoothly as windowed mode.
+
+You install it once. After that the game always starts this way, no matter how you start it: the ShockWave launcher, a shortcut, GenPatcher or another mod.
+
+It is also nice if you simply like borderless fullscreen: alt-tab is quick, a second monitor works normally, and the mouse stays inside the game, so scrolling at the edge of the screen still works.
 
 ## Install
 
 1. Download `GeneralsBorderless.zip` from [Releases](../../releases/latest) and unzip it.
-2. Run `GeneralsBorderless.exe` and allow the admin prompt (game folders are in Program Files).
-3. It lists the game folders it found (Zero Hour, Generals). Leave them ticked and click **Install**.
-   For a mod with its own copy of the game in another folder, click **Add folder...** and pick that folder.
-4. Close it and play the way you always do.
+2. Run `GeneralsBorderless.exe`. Click **Yes** when Windows asks for admin rights (the game is in Program Files).
+3. It shows the game folders it found. Leave them ticked and click **Install**.
+   Is a mod in its own separate folder? Click **Add folder...** and pick that folder.
+4. Close it and play like you always do.
 
-Windows SmartScreen may warn because the exe isn't signed: **More info > Run anyway**. Some antivirus programs distrust a `dinput8.dll` they don't know; allow it if yours removes it.
+Windows may say the app is unknown, because it isn't signed. Click **More info**, then **Run anyway**. If your antivirus removes `dinput8.dll`, allow it.
 
 ## Remove
 
-Run `GeneralsBorderless.exe` again, tick the folders and click **Remove**. Everything is put back.
+Run `GeneralsBorderless.exe` again, tick the folders and click **Remove**. Your game is back to how it was.
 
 ## Update
 
-Download the new release, run its `GeneralsBorderless.exe` and click **Install**. Folders with the old version show "Installed, older version".
-
-## Settings
-
-`GeneralsBorderless.ini` in the game folder:
-
-| Setting | Effect |
-| --- | --- |
-| `Enabled=0` | Turn the patch off without removing it: the game starts as before. |
-| `ForceNativeResolution=0` | Keep the resolution picked in the game's options. A lower one is centred with the desktop around it (not stretched). |
-| `LockCursor=0` | Don't keep the mouse inside the game. |
+Download the new version, run its `GeneralsBorderless.exe` and click **Install**. Folders with the old version say "Installed, older version".
 
 ## How it works
 
-Install puts two files in each game folder:
+The patch puts a small file, `dinput8.dll`, in the game folder. The game loads this file by itself every time it starts. That is why it doesn't matter which launcher or mod starts the game.
 
-- `dinput8.dll`: the game loads it by itself. It hands everything on to Windows' own `dinput8.dll` (DirectInput) and, inside the game:
-  - adds `-win` to the command line, so the game runs windowed instead of in exclusive fullscreen, which is what hitches;
-  - creates the game window without a frame and keeps it centred on its monitor, which at the monitor's resolution means covering it exactly;
-  - sets the resolution in the game's `Options.ini` to the monitor's before the game reads it;
-  - makes the game DPI aware, so Windows display scaling (125%/150%) doesn't blow it up;
-  - keeps the mouse inside the game while it has focus.
+When the game starts, the patch:
 
-  If the folder already had a `dinput8.dll` from something else, that one is kept as `dinput8_original.dll` and still used; Remove puts it back.
-- `GeneralsBorderless.ini`: the settings above.
+1. tells the game to start in windowed mode, because windowed mode doesn't stutter;
+2. removes the border and title bar of the window;
+3. makes the window exactly as big as your screen, and sets the game to your screen's resolution;
+4. stops Windows display scaling (125%, 150%) from making the game too big;
+5. keeps the mouse inside the game while you play.
 
-If the patch stops working after GenPatcher replaced files, run `GeneralsBorderless.exe` and click **Install** again. WorldBuilder is not affected. Online services (GenTool online, GameRanger) have not been tested; if one complains, set `Enabled=0` or click **Remove**.
+For everything else the game asks this file for, the patch passes the request on to the real `dinput8.dll` from Windows (it handles the keyboard). Your game files stay the same, so you can still play LAN games with people who don't have the patch.
 
-Logs: `%LOCALAPPDATA%\GeneralsBorderless\game.log` (the game) and `patcher.log` (install/remove).
+Did the game folder already have a `dinput8.dll` from another tool? Then the patch keeps it as `dinput8_original.dll` and still uses it. **Remove** puts it back.
 
-The patcher can also be scripted: `GeneralsBorderless.exe -install | -remove | -status [-path <game folder>]...`
+## Settings
+
+The game folder also gets `GeneralsBorderless.ini`. You can change it with Notepad:
+
+| Setting | What it does |
+| --- | --- |
+| `Enabled=0` | Turns the patch off without removing it. The game starts like before. |
+| `ForceNativeResolution=0` | Lets you pick your own resolution in the game's options. A lower resolution is shown in the middle of the screen, not stretched. |
+| `LockCursor=0` | Lets the mouse leave the game window. |
+
+## Problems?
+
+- It stopped working after you ran GenPatcher? Run `GeneralsBorderless.exe` and click **Install** again.
+- Online play (GenTool online, GameRanger) hasn't been tested. If something complains, set `Enabled=0` or click **Remove**.
+- WorldBuilder isn't affected.
+- Logs are in `%LOCALAPPDATA%\GeneralsBorderless`: `game.log` for the game, `patcher.log` for install and remove.
+- For scripts: `GeneralsBorderless.exe -install | -remove | -status [-path <game folder>]`
