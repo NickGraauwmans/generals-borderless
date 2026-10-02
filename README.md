@@ -24,12 +24,12 @@ It is also nice if you simply like borderless fullscreen: alt-tab is quick, a se
 
 1. Download `GeneralsBorderless.zip` from [Releases](../../releases/latest) and unzip it.
 2. Run `GeneralsBorderless.exe`. Click **Yes** when Windows asks for admin rights (the game is in Program Files).
-3. It shows the game folders it found. Leave them ticked and click **Install**.
+3. It shows the game folders it found, already selected. Click **Install**.
    Is your game not in the list? Click **Add folder...** and pick your game folder. A folder that holds both Generals and Zero Hour works too.
 
    ![Click Install](images/install.png)
 
-4. The folders now say **Installed**. Close it and play like you always do.
+4. The folders now say **Installed**. Close it and start the game.
 
    ![The folders say Installed](images/installed.png)
 
@@ -37,7 +37,7 @@ Windows may say the app is unknown, because it isn't signed. Click **More info**
 
 ## Remove
 
-Run `GeneralsBorderless.exe` again, tick the folders and click **Remove**. Your game is back to how it was.
+Run `GeneralsBorderless.exe` again and click **Remove** (it works on the selected folders). Your game is back to how it was.
 
 ![Click Remove](images/remove.png)
 
@@ -63,12 +63,13 @@ Did the game folder already have a `dinput8.dll` from another tool? Then the pat
 
 ## Settings
 
-The game folder also gets `GeneralsBorderless.ini`. You can change it with Notepad:
+Run `GeneralsBorderless.exe` and click **Settings...** (it works on the selected folders). The changes take effect the next time the game starts. The settings are stored in `GeneralsBorderless.ini` in the game folder:
 
 | Setting | What it does |
 | --- | --- |
 | `Enabled=0` | Turns the patch off without removing it. The game starts like before. |
-| `ForceNativeResolution=0` | Lets you pick your own resolution in the game's options. A lower resolution is shown in the middle of the screen, not stretched. |
+| `ForceNativeResolution=0` | Lets you pick your own resolution in the game's options. A lower resolution is scaled up to fill the screen, so the menus and buttons get bigger. If its shape differs from your screen (like 4:3), you get black bars on the sides instead of a stretched picture. |
+| `ScaleToScreen=0` | Together with `ForceNativeResolution=0`: shows a lower resolution at its own size in the middle of the screen instead of scaling it up (box mode). |
 | `LockCursor=0` | Lets the mouse leave the game window. |
 
 ## Problems?
