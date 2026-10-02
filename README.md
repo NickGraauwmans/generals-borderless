@@ -72,7 +72,6 @@ The game folder also gets `GeneralsBorderless.ini`. You can change it with Notep
 ## Problems?
 
 - It stopped working after you ran GenPatcher? Run `GeneralsBorderless.exe` and click **Install** again.
-- Online play (GenTool online, GameRanger) hasn't been tested. If something complains, set `Enabled=0` or click **Remove**.
 - WorldBuilder isn't affected.
 - Logs are in `%LOCALAPPDATA%\GeneralsBorderless`: `game.log` for the game, `patcher.log` for install and remove.
 - For scripts: `GeneralsBorderless.exe -install | -remove | -status [-path <game folder>]`
