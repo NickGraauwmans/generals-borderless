@@ -16,7 +16,7 @@ You install it once. After that the game always starts this way, no matter how y
 
 **Bonus:** alt-tab no longer crashes the game, which often happens in fullscreen.
 
-![Alt-tab out to another window and back: the game keeps running](images/alt-tab.webp)
+![Alt-tab out to another window and back: no issues](images/alt-tab.webp)
 
 It is also nice if you simply like borderless fullscreen: alt-tab is quick, a second monitor works normally, and the mouse stays inside the game, so scrolling at the edge of the screen still works.
 
