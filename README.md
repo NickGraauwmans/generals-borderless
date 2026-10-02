@@ -50,7 +50,7 @@ Install puts two files in each game folder:
   If the folder already had a `dinput8.dll` from something else, that one is kept as `dinput8_original.dll` and still used; Remove puts it back.
 - `GeneralsBorderless.ini`: the settings above.
 
-If the patch stops working after GenPatcher or a game update replaced files, run `GeneralsBorderless.exe` and click **Install** again. WorldBuilder is not affected. Online services (GenTool online, GameRanger) have not been tested; if one complains, set `Enabled=0` or click **Remove**.
+If the patch stops working after GenPatcher replaced files, run `GeneralsBorderless.exe` and click **Install** again. WorldBuilder is not affected. Online services (GenTool online, GameRanger) have not been tested; if one complains, set `Enabled=0` or click **Remove**.
 
 Logs: `%LOCALAPPDATA%\GeneralsBorderless\game.log` (the game) and `patcher.log` (install/remove).
 
