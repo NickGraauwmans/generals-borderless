@@ -15,7 +15,7 @@
 #include <shlobj.h>
 
 // The patcher recognises its own DLL by this text, so keep it in the binary.
-static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.1";
+static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.2";
 static const DWORD FrameStyles = WS_CAPTION | WS_THICKFRAME;
 static const DWORD FrameExStyles = WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
 
@@ -381,6 +381,14 @@ static HWND WINAPI HookCreateWindowExA(DWORD exStyle, LPCSTR cls, LPCSTR title, 
     if (game) Prepare();
     if (windowed)
     {
+        // The game made the size room for a frame (AdjustWindowRect around 800x600); without the frame
+        // that room would show as a black edge under the splash screen, so take it off again.
+        RECT frame = { 0, 0, 0, 0 };
+        if (AdjustWindowRectEx(&frame, style, FALSE, exStyle) && w > frame.right - frame.left && h > frame.bottom - frame.top)
+        {
+            w -= frame.right - frame.left;
+            h -= frame.bottom - frame.top;
+        }
         style = (style & ~FrameStyles) | WS_POPUP;
         exStyle &= ~FrameExStyles;
         POINT centre = { x + w / 2, y + h / 2 };
