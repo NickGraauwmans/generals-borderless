@@ -22,8 +22,8 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 // The release version, shown in the window; a release tag must match it (the workflow checks).
-[assembly: AssemblyVersion("1.4.0")]
-[assembly: AssemblyFileVersion("1.4.0")]
+[assembly: AssemblyVersion("1.4.1")]
+[assembly: AssemblyFileVersion("1.4.1")]
 [assembly: AssemblyTitle("Generals Borderless")]
 [assembly: AssemblyProduct("Generals Borderless")]
 

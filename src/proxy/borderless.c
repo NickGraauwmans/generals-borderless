@@ -15,7 +15,7 @@
 #include <shlobj.h>
 
 // The patcher recognises its own DLL by this text, so keep it in the binary.
-static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.4";
+static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.4.1";
 static const DWORD FrameStyles = WS_CAPTION | WS_THICKFRAME;
 static const DWORD FrameExStyles = WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
 
@@ -551,6 +551,10 @@ static BOOL WINAPI HookGetClientRect(HWND hwnd, RECT *r)
         SetRect(r, 0, 0, gameW, gameH);
         return TRUE;
     }
+    // The game first asks for its window's size when the splash screen is done, to fit the window to its
+    // resolution. At 800x600, the splash screen's own size, nothing needs resizing (no SetWindowPos follows),
+    // so this is where the game is known to have its final size.
+    if (managed && hwnd == gameWnd) gameSized = TRUE;
     return realGetClientRect(hwnd, r);
 }
 
@@ -630,6 +634,7 @@ static FARPROC Real(const char *name)
         char path[MAX_PATH];
         SiblingPath(path, "dinput8_original.dll");
         if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) realDInput = LoadLibraryA(path);
+        if (realDInput == self) realDInput = NULL; // this file itself, renamed by another tool: never call ourselves
         if (!realDInput && GetSystemDirectoryA(path, MAX_PATH - 20))
         {
             lstrcatA(path, "\\dinput8.dll");
