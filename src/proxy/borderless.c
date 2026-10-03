@@ -15,7 +15,7 @@
 #include <shlobj.h>
 
 // The patcher recognises its own DLL by this text, so keep it in the binary.
-static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.3";
+static const char Marker[] = "GeneralsBorderless dinput8 proxy 1.4";
 static const DWORD FrameStyles = WS_CAPTION | WS_THICKFRAME;
 static const DWORD FrameExStyles = WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
 
@@ -58,8 +58,6 @@ static void Log(const char *fmt, ...)
     CloseHandle(f);
 }
 
-// Points the main exe's import of dll!name at hook and returns the previous target, or NULL when
-// the exe doesn't import it.
 // A file next to this DLL.
 static void SiblingPath(char *path, const char *name)
 {
@@ -70,6 +68,8 @@ static void SiblingPath(char *path, const char *name)
     lstrcpyA(slash, name);
 }
 
+// Points the main exe's import of dll!name at hook and returns the previous target, or NULL when
+// the exe doesn't import it.
 static void *HookImport(HMODULE exe, const char *dll, const char *name, void *hook)
 {
     BYTE *base = (BYTE *)exe;
@@ -383,8 +383,9 @@ static DWORD WINAPI Worker(LPVOID unused)
             int x = target.left, y = target.top, w = target.right - target.left, h = target.bottom - target.top;
             if (backdrop)
             {
-                // black behind the game where scaling leaves bars (a 4:3 game on a wide screen)
-                BOOL bars = gameSized && !EqualRect(&target, &mon); // not behind the splash screen
+                // black behind the game where scaling leaves bars (a 4:3 game on a wide screen);
+                // not behind the splash screen, and not while the game is hidden
+                BOOL bars = gameSized && IsWindowVisible(gameWnd) && !EqualRect(&target, &mon);
                 if (bars != (IsWindowVisible(backdrop) != 0))
                     realSetWindowPos(backdrop, NULL, mon.left, mon.top, mon.right - mon.left, mon.bottom - mon.top,
                                      SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | (bars ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
@@ -405,6 +406,8 @@ static DWORD WINAPI Worker(LPVOID unused)
                 }
             }
         }
+        else if (backdrop && IsWindowVisible(backdrop))
+            ShowWindowAsync(backdrop, SW_HIDE); // minimized (Win+D, taskbar): no black screen over the desktop
         if (lockCursor)
         {
             if (GameActive())
